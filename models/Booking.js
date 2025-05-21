@@ -8,7 +8,7 @@ const bookingSchema = new mongoose.Schema({
   date: { type: Date, required: true },
   time: { type: String, required: true },
   status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
-  userId: { type: String } // เปลี่ยนจาก required เป็น optional
+  userId: { type: String } 
 }, {
   timestamps: true
 });
