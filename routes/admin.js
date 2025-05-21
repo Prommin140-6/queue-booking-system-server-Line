@@ -4,6 +4,16 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 
+// เพิ่ม admin เริ่มต้นถ้ายังไม่มี
+(async () => {
+  const adminExists = await Admin.findOne({ username: 'admin' });
+  if (!adminExists) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    await Admin.create({ username: 'admin', password: hashedPassword });
+    console.log('Default admin created: username=admin, password=admin123');
+  }
+})();
+
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
@@ -22,11 +32,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
+    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   } catch (error) {
+    console.error('Admin login error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

@@ -1,8 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const axios = require('axios');
 const connectDB = require('./db');
-const bookingRoutes = require('./routes/booking'); // ถูกต้องตามที่คุณยืนยัน
+const bookingRoutes = require('./routes/booking');
 const adminRoutes = require('./routes/admin');
 
 dotenv.config();
@@ -36,11 +37,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-// จัดการ OPTIONS request
 app.options('*', cors(corsOptions));
 
-// Log request and response
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url} from ${req.get('Origin') || 'No Origin'}`);
   res.on('finish', () => {
@@ -50,6 +48,55 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// LINE Login Callback
+app.post('/auth/line/callback', async (req, res) => {
+  const { code } = req.body;
+
+  if (!code) {
+    console.error('Missing code in request body');
+    return res.status(400).json({ error: 'Missing code parameter' });
+  }
+
+  try {
+    console.log('LINE callback - Environment variables:', {
+      LINE_CHANNEL_ID: process.env.LINE_CHANNEL_ID,
+      LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET,
+      LINE_REDIRECT_URI: process.env.LINE_REDIRECT_URI,
+    });
+
+    const tokenResponse = await axios.post(
+      'https://api.line.me/oauth2/v2.1/token',
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.LINE_REDIRECT_URI || 'http://localhost:3000/auth/line/callback',
+        client_id: process.env.LINE_CHANNEL_ID,
+        client_secret: process.env.LINE_CHANNEL_SECRET,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+    console.log('LINE Access Token:', accessToken);
+
+    const userResponse = await axios.get('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userId = userResponse.data.userId;
+    console.log('Fetched LINE userId:', userId);
+
+    res.json({ userId });
+  } catch (error) {
+    console.error('LINE Login failed:', {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    res.status(500).json({ error: 'Failed to authenticate with LINE', details: error.response?.data || error.message });
+  }
+});
 
 // Routes
 app.use('/api/bookings', bookingRoutes);
