@@ -44,7 +44,6 @@ router.post('/', async (req, res) => {
     });
     await booking.save();
 
-    // แจ้งเตือนแอดมินเท่านั้น
     if (ADMIN_USER_ID && CHANNEL_ACCESS_TOKEN) {
       try {
         const adminResponse = await axios.post(
@@ -79,6 +78,32 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Check status by phone
+router.post('/check-status', async (req, res) => {
+  const { phone } = req.body;
+
+  try {
+    if (!phone) {
+      return res.status(400).json({ message: 'กรุณาระบุเบอร์โทร' });
+    }
+
+    const phoneRegex = /^0[0-9]{9}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ message: 'เบอร์โทรต้องมี 10 หลัก เริ่มต้นด้วย 0' });
+    }
+
+    const bookings = await Booking.find({ phone }).sort({ createdAt: -1 }); // เรียกข้อมูลล่าสุด
+    if (bookings.length > 0) {
+      res.json(bookings);
+    } else {
+      res.json([]);
+    }
+  } catch (error) {
+    console.error('Error checking status:', error.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Get all bookings
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -108,93 +133,24 @@ router.get('/summary', authMiddleware, async (req, res) => {
   }
 });
 
-// Update booking status, date, and time
+// Update booking status
 router.patch('/:id', authMiddleware, async (req, res) => {
   try {
-    const { status, date, time } = req.body;
-
-    // ตรวจสอบข้อมูลที่ส่งมา
-    if (!status && !date && !time) {
-      return res.status(400).json({ message: 'ต้องระบุอย่างน้อยหนึ่งฟิลด์: status, date, หรือ time' });
-    }
-
-    // สร้าง object สำหรับอัปเดต
-    const updateFields = {};
-    if (status) {
-      if (!['pending', 'accepted', 'rejected'].includes(status)) {
-        return res.status(400).json({ message: 'Invalid status value' });
-      }
-      updateFields.status = status;
-    }
-    if (date) {
-      const bookingDate = new Date(date);
-      if (isNaN(bookingDate.getTime())) {
-        return res.status(400).json({ message: 'วันที่ไม่ถูกต้อง' });
-      }
-      bookingDate.setHours(0, 0, 0, 0);
-      updateFields.date = bookingDate;
-    }
-    if (time) {
-      const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
-      if (!timeRegex.test(time)) {
-        return res.status(400).json({ message: 'รูปแบบเวลาไม่ถูกต้อง ต้องเป็น HH:mm' });
-      }
-      updateFields.time = time;
-    }
-
-    // ตรวจสอบว่าเวลาใหม่ถูกจองหรือยัง (ถ้ามีการอัปเดต date หรือ time)
-    if (date || time) {
-      const bookingDate = updateFields.date || (await Booking.findById(req.params.id))?.date;
-      const bookingTime = updateFields.time || (await Booking.findById(req.params.id))?.time;
-      if (bookingDate && bookingTime) {
-        const existingBooking = await Booking.findOne({
-          date: bookingDate,
-          time: bookingTime,
-          status: { $in: ['pending', 'accepted'] },
-          _id: { $ne: req.params.id }, // ยกเว้นการจองปัจจุบัน
-        });
-        if (existingBooking) {
-          return res.status(400).json({ message: 'เวลาเต็ม' });
-        }
-      }
+    const { status } = req.body;
+    if (!['pending', 'accepted', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
     }
 
     const booking = await Booking.findByIdAndUpdate(
       req.params.id,
-      updateFields,
+      { status },
       { new: true, runValidators: true }
     );
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    // เพิ่มการแจ้งเตือนแอดมินเมื่อมีการเลื่อนเวลา
-    if ((date || time) && ADMIN_USER_ID && CHANNEL_ACCESS_TOKEN) {
-      try {
-        const adminResponse = await axios.post(
-          'https://api.line.me/v2/bot/message/push',
-          {
-            to: ADMIN_USER_ID,
-            messages: [
-              {
-                type: 'text',
-                text: `การจองของ ${booking.name} ถูกเลื่อนเวลา\nวันที่ใหม่: ${booking.date.toISOString().split('T')[0]}\nเวลาใหม่: ${booking.time}\nเบอร์โทร: ${booking.phone}\nรุ่นรถ: ${booking.carModel}\nหมายเลขทะเบียน: ${booking.licensePlate}`,
-              },
-            ],
-          },
-          { headers: { Authorization: `Bearer ${CHANNEL_ACCESS_TOKEN}` } }
-        );
-        console.log('LINE notification to admin sent successfully:', adminResponse.data);
-      } catch (lineError) {
-        console.error('Failed to send LINE notification to admin:', {
-          status: lineError.response?.status,
-          data: lineError.response?.data,
-          message: lineError.message,
-        });
-      }
-    }
-
-    res.json({ message: 'Booking updated', booking });
+    res.json(booking);
   } catch (error) {
     console.error('PATCH /api/bookings/:id error:', error.message);
     res.status(500).json({ message: 'Server error', error: error.message });
