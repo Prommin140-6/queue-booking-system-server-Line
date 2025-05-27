@@ -46,6 +46,25 @@ router.post('/', async (req, res) => {
 
     if (ADMIN_USER_ID && CHANNEL_ACCESS_TOKEN) {
       try {
+        // Format date to Thai format
+        const thaiDate = new Date(date).toLocaleDateString('th-TH', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+
+        // Format time to include ".00"
+        const formattedTime = `${time}.00`;
+
+        const message = `มีคำขอ ล้างรถ ใหม่\n` +
+                       `ชื่อ: ${name}\n` +
+                       `เบอร์โทร: ${phone}\n` +
+                       `รุ่นรถ: ${carModel}\n` +
+                       `ทะเบียน: ${licensePlate}\n` +
+                       `วันที่สะดวก: ${thaiDate}\n` +
+                       `เวลา ${formattedTime}\n` +
+                       `กรุณาโทรไปคอนเฟิร์ม`;
+
         const adminResponse = await axios.post(
           'https://api.line.me/v2/bot/message/push',
           {
@@ -53,7 +72,7 @@ router.post('/', async (req, res) => {
             messages: [
               {
                 type: 'text',
-                text: `มีลูกค้าจองคิวใหม่: ${name} [${date}] [${time}] กรุณาตรวจสอบ\nเบอร์โทร: ${phone}\nรุ่นรถ: ${carModel}\nหมายเลขทะเบียน: ${licensePlate}`,
+                text: message,
               },
             ],
           },
@@ -92,7 +111,7 @@ router.post('/check-status', async (req, res) => {
       return res.status(400).json({ message: 'เบอร์โทรต้องมี 10 หลัก เริ่มต้นด้วย 0' });
     }
 
-    const bookings = await Booking.find({ phone }).sort({ createdAt: -1 }); // เรียกข้อมูลล่าสุด
+    const bookings = await Booking.find({ phone }).sort({ createdAt: -1 });
     if (bookings.length > 0) {
       res.json(bookings);
     } else {
